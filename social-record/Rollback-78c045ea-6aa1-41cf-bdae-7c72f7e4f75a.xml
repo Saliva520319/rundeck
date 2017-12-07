@@ -1,0 +1,224 @@
+<joblist>
+  <job>
+    <description></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>false</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>true</successOnEmptyNodeFilter>
+      <threadcount>1</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>social-record</group>
+    <id>78c045ea-6aa1-41cf-bdae-7c72f7e4f75a</id>
+    <loglevel>INFO</loglevel>
+    <name>Rollback</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>tags:social-record</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>Stop service &amp; Backup datafiles &amp; Recover </description>
+        <plugins>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>blue</fgcolor>
+              <mode>bold</mode>
+              <regex>Stop the service...</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>red</fgcolor>
+              <mode>blink</mode>
+              <regex>Stop service failed...</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>green</fgcolor>
+              <mode>blink</mode>
+              <regex>Stop service successfully.</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>blue</fgcolor>
+              <mode>bold</mode>
+              <regex>Backup the current datafiles...</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>red</fgcolor>
+              <mode>blink</mode>
+              <regex>Version file not exist...</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>red</fgcolor>
+              <mode>blink</mode>
+              <regex>Recover data files failed.</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>green</fgcolor>
+              <mode>blink</mode>
+              <regex>Tomcat started.</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>blue</fgcolor>
+              <mode>bold</mode>
+              <regex>Recover from version</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>red</fgcolor>
+              <mode>blink</mode>
+              <regex>/data/tomcat-social-optest/webapps/ is not empty!!!</regex>
+            </config>
+          </LogFilter>
+        </plugins>
+        <script><![CDATA[#!/bin/bash
+
+source /etc/profile
+source ~/.bash_profile
+
+SERVICE_ROOT=@node.serviceroot@
+
+cd $SERVICE_ROOT
+aim_dir=@node.aim_dir@
+
+# stop service
+
+count=0
+while [ 1 ]
+do
+ sleep 3s
+ count=$(($count+1))
+ echo "Stop the service...[$count/4]"
+ if [ $count -gt 4 ];
+ then
+  echo "Stop service failed..."
+  exit 1
+ fi
+ 
+ ps aux | grep java | grep $SERVICE_ROOT/ | awk  '{print $2}' | xargs kill -9 &> /dev/null
+ 
+ if ps aux | grep java | grep $SERVICE_ROOT/;
+    then 
+    continue 
+    else 
+    echo "Stop service successfully." 
+    break
+ fi
+done
+
+
+# mv current data
+echo "Backup the current datafiles..."
+mkdir -p $SERVICE_ROOT/backup/tmp
+
+mv  $SERVICE_ROOT/webapps/$aim_dir/ $SERVICE_ROOT/backup/tmp/${aim_dir}.`date +%F-%H-%M-%S`
+#
+
+if [[ -d $SERVICE_ROOT/webapps/$aim_dir/ ]]
+then
+echo "$SERVICE_ROOT/webapps/ is not empty!!!"
+exit 1
+fi
+
+# copy from backup
+# read version filenames
+if [[ ! -s $SERVICE_ROOT/backup/filename ]]
+then
+echo "Version file not exist..."
+exit 1
+fi
+
+filename=`cat $SERVICE_ROOT/backup/filename`
+
+# recover from backup 
+cp -r $SERVICE_ROOT/backup/$filename $SERVICE_ROOT/webapps/$aim_dir/
+
+if [ $? -ne 0 ]
+then 
+echo "Recover data files failed."
+exit 1
+fi
+echo "Recover from version ${filename}..."
+# start service
+$SERVICE_ROOT/bin/catalina.sh start
+
+
+
+]]></script>
+        <scriptargs />
+      </command>
+      <command>
+        <description>Check the WEB status code.</description>
+        <plugins>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>blue</fgcolor>
+              <mode>bold</mode>
+              <regex>Check the service status.</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>green</fgcolor>
+              <mode>blink</mode>
+              <regex>Service is avaliable!</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>red</fgcolor>
+              <mode>blink</mode>
+              <regex>Fail to start the process  in 120 seconds.</regex>
+            </config>
+          </LogFilter>
+        </plugins>
+        <script><![CDATA[#!/bin/bash
+
+
+
+SERVE_URL=http://127.0.0.1:8180/community-pc-war/
+
+count=0
+while [ 1 ]
+do
+ sleep 10s
+ count=$(($count+1))
+ echo "Check the service status.[$count/30]"
+ if [ $count -gt 30 ];
+ then
+  echo "Fail to start the process  in 300 seconds."
+  exit 1
+ fi
+ 
+ statuscode=`curl -I -m 10 -o /dev/null -s -w %{http_code} $SERVE_URL`
+ 
+ if [ $statuscode -eq 200 ];
+    then 
+    echo "Service is avaliable!"
+    exit 0
+ fi
+done
+]]></script>
+        <scriptargs />
+      </command>
+    </sequence>
+    <timeZone>GMT-8:00</timeZone>
+    <uuid>78c045ea-6aa1-41cf-bdae-7c72f7e4f75a</uuid>
+  </job>
+</joblist>

@@ -1,0 +1,212 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option name='MD5_VALUE' required='true' />
+        <option name='REMOTE_URL' required='true' />
+      </options>
+    </context>
+    <description></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>false</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>true</successOnEmptyNodeFilter>
+      <threadcount>1</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>mgr</group>
+    <id>29588d21-63da-43dc-9cc1-5ef91a12a90a</id>
+    <loglevel>INFO</loglevel>
+    <name>NewVersionRelease</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>tags:mgr</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>Download file and check md5</description>
+        <plugins>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>blue</fgcolor>
+              <mode>bold</mode>
+              <regex>Download file from @option.REMOTE_URL@...</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>red</fgcolor>
+              <mode>blink</mode>
+              <regex>Download failed!</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='highlight-output'>
+            <config>
+              <fgcolor>blue</fgcolor>
+              <mode>bold</mode>
+              <regex>Check the md5 value</regex>
+            </config>
+          </LogFilter>
+        </plugins>
+        <script><![CDATA[#!/bin/bash
+
+
+SERVICE_ROOT=@node.serviceroot@
+#
+echo "Download file from @option.REMOTE_URL@..."
+#
+curl -s -o $SERVICE_ROOT/$(basename @option.REMOTE_URL@) @option.REMOTE_URL@ 
+#
+if [ $? -ne 0 ]
+then
+echo "Download failed!"
+exit 1
+fi
+#
+cd $SERVICE_ROOT
+#
+var=@option.REMOTE_URL@
+#
+filename=$(basename $var)
+#
+echo "Check the md5 value of the $filename..."
+#
+touch ./$filename.md5 && echo "@option.MD5_VALUE@  $filename" > $filename.md5
+
+md5sum -c $filename.md5
+]]></script>
+        <scriptargs />
+      </command>
+      <command>
+        <description>Stop, Backup and Start.</description>
+        <script><![CDATA[#!/bin/bash
+
+# Check $SERVICE_ROOT status, quit if not exist.
+
+source /etc/profile
+source ~/.bash_profile
+
+SERVICE_ROOT=@node.serviceroot@
+
+if [ ! -d $SERVICE_ROOT ];
+then
+echo "$SERVICE_ROOT does not exist!!"
+exit 1
+fi
+
+# Forward to rootdir, get the filename from REMOTE_URL, make some constants.
+
+cd $SERVICE_ROOT
+filename=$(basename @option.REMOTE_URL@)
+aim_dir=@node.aim_dir@
+mkdir -p $SERVICE_ROOT/webapps/$aim_dir
+mkdir -p $SERVICE_ROOT/backup
+
+# Stop service forloop, 4 times failed will exit.
+
+count=0
+while [ 1 ]
+do
+ sleep 3s
+ count=$(($count+1))
+ echo "Stop the service...[$count/4]"
+ if [ $count -gt 4 ];
+ then
+  echo "Stop service failed..."
+  exit 1
+ fi
+ 
+ ps aux | grep java | grep $SERVICE_ROOT/bin | awk  '{print $2}' | xargs kill -9 &> /dev/null
+ 
+ if ps aux | grep java | grep $SERVICE_ROOT/bin;
+    then 
+    continue 
+    else 
+    echo "Stop service successfully." 
+    break
+ fi
+done
+
+# Backup current datafiles(./webapps/$aim_dir) to ./backup/, add a timestamp.
+# Forloop to check backup status, write the backup name to filename.
+
+echo "Backup the datafiles..."
+timestamp=`date +%F-%H-%M-%S`
+mv  $SERVICE_ROOT/webapps/$aim_dir/ $SERVICE_ROOT/backup/${aim_dir}.$timestamp
+
+if [ $? -ne 0 ]
+then 
+echo "Backup failed."
+exit 1
+fi
+
+echo ${aim_dir}.$timestamp > $SERVICE_ROOT/backup/filename
+
+# Delete work(running-generate-temp datafiles)
+
+/bin/rm -rf $SERVICE_ROOT/work/
+
+# Unzip $filename to $cur_dir/webapps/$aim_dir
+# Forloop to check status.
+
+echo "Unzip the datafiles..."
+unzip -q -d  $SERVICE_ROOT/webapps/$aim_dir $filename
+
+if [ $? -ne 0 ]
+then
+echo "Unzip failed!!!"
+exit 1
+fi
+
+# Remove md5 checkfiles and origin .war files.
+
+rm -f $filename
+rm -f $filename.md5
+echo "Delete ${filename} and ${filename}.md5 from $SERVICE_ROOT...."
+
+# Start service
+
+$SERVICE_ROOT/bin/catalina.sh start
+
+]]></script>
+        <scriptargs />
+      </command>
+      <command>
+        <description>Check the WEB status code.</description>
+        <script><![CDATA[#!/bin/bash
+
+
+SERVE_URL=@node.curlpage@
+
+count=0
+while [ 1 ]
+do
+ sleep 10s
+ count=$(($count+1))
+ echo "Check the service status.[$count/30]"
+ if [ $count -gt 30 ];
+ then
+  echo "Fail to start the process  in 300 seconds."
+  exit 1
+ fi
+ 
+ statuscode=`curl -I -m 10 -o /dev/null -s -w %{http_code} $SERVE_URL`
+ 
+ if [ $statuscode -eq 200 ];
+    then 
+    echo "Service is avaliable!"
+    exit 0
+ fi
+done
+
+]]></script>
+        <scriptargs />
+      </command>
+    </sequence>
+    <timeZone>GMT-8:00</timeZone>
+    <uuid>29588d21-63da-43dc-9cc1-5ef91a12a90a</uuid>
+  </job>
+</joblist>
